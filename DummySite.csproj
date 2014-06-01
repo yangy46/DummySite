@@ -57,6 +57,7 @@
     <Reference Include="System.EnterpriseServices" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="image\bus-marker.png" />
     <Content Include="image\bus.png" />
     <Content Include="index.html" />
     <Content Include="js\app.js" />

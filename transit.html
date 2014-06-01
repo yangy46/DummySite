@@ -1,38 +1,324 @@
-﻿<!DOCTYPE html>
+﻿
 <html>
   <head>
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
-    <title>Transit layer</title>
+    <title>BusFinder, by Laicos</title>
     <style>
       html, body, #map-canvas {
         height: 100%;
         margin: 0px;
-        padding: 0px
+        padding: 0px;
+        font-family: Helvetica;
+      }
+      #panel {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        margin-left: -180px;
+        z-index: 5;
+        background-color: #fff;
+        padding: 5px;
+        border: 1px solid #999;
+      }
+      #search-box {
+        position: absolute;
+        right: 30px;
+        top: 30px;
+        padding: 7px;
+        line-height: 1em;
+        background-color:rgba(255,255,255,0.9);
+        -moz-border-radius: 5px;
+        -webkit-border-radius: 5px;
+        border-radius: 5px; /* future proofing */
+        -khtml-border-radius: 5px; /* for old Konqueror browsers */
+      }
+      input, textarea { 
+        box-shadow: rgba(0,0,0, 0.1) 0px 0px 8px; 
+        -moz-box-shadow: rgba(0,0,0, 0.1) 0px 0px 8px;
+        -webkit-box-shadow: rgba(0,0,0, 0.1) 0px 0px 8px; 
+      }
+      .space {
+	    height: 7px;    
       }
     </style>
     <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
+    <script src="js/carvoyant.min.js"></script>
     <script>
-        function initialize() {
-            var myLatlng = new google.maps.LatLng(27.9827609, -82.5476295);
-            var mapOptions = {
-                zoom: 13,
-                center: myLatlng,
-                travelMode: google.maps.TravelMode.TRANSIT
-  
-            }
+        var directionsDisplay;
+        var directionsService = new google.maps.DirectionsService();
+        var map;
+        var start = null;
+        var end = null; // new google.maps.LatLng(27.9641826, -82.4384844);
+        var markers = [];
+        var vehicles = [];
 
-            var map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+        function init() {
 
-            var transitLayer = new google.maps.TransitLayer();
-            transitLayer.setMap(map);
+            onDeviceReady();
         }
 
-        google.maps.event.addDomListener(window, 'load', initialize);
 
+        function getLocation(address, success, error) {
+
+            //alert("searching...");
+
+            var geocoder = new google.maps.Geocoder();
+
+            geocoder.geocode({ 'address': address }, function (results, status) {
+                if (status == google.maps.GeocoderStatus.OK) {
+                    var latitude = results[0].geometry.location.lat();
+                    var longitude = results[0].geometry.location.lng();
+                    //alert("Latitude: " + latitude + "\nLongitude: " + longitude);
+                    var dest = new google.maps.LatLng(latitude, longitude);
+
+                    if (success) {
+                        success(dest);
+                    }// if
+
+                } else {
+                    alert("Failed to find destination")
+
+                    if (error) {
+                        error();
+                    }// if
+                }
+            });
+
+            // alert("search started...");
+
+        };
+
+        function plotVehicles(mapHandle) {
+
+            clearMarkers();
+
+            for (var i = 0; i < vehicles.length; i++) {
+
+                curVehichle = vehicles[i];
+
+                if (curVehichle.lastWaypoint) {
+
+                    pos = new google.maps.LatLng(curVehichle.lastWaypoint.latitude, curVehichle.lastWaypoint.longitude);
+
+
+                    // plot position
+                    marker = new google.maps.Marker({
+                        position: pos,
+                        title: curVehichle.name,
+                        animation: google.maps.Animation.DROP,
+                        icon: "/image/bus-marker.png"
+                    });
+
+                    //google.maps.event.addListener(markers[j], 'click', function () {
+
+                    //    var infowindow = new google.maps.InfoWindow({
+                    //        content: markers[j].title
+                    //    });
+
+                    //    infowindow.open(map, markers[j]);
+                    //});
+
+                    markers.push(marker);
+
+                    // To add the marker to the map, call setMap();
+                    marker.setMap(mapHandle);
+
+                }// if
+
+            }// for
+
+
+
+        }
+
+        function getVehicleLocations(mapHandle) {
+
+            var client = carvoyant.createClient({ accessToken: 'p27p6wsjf6eh3ybvyrqnq4sv' });
+
+            //alert("getting vehicles");
+
+            // call api
+            client.vehicles(function (response) {
+
+                var curVehichle = null;
+
+                if (response && response.body && response.body.vehicle) {
+
+                    var marker = null;
+                    var pos = null;
+
+                    // cache
+                    vehicles = response.body.vehicle;
+
+                    plotVehicles(mapHandle);
+
+                    // get locations again in 60 seconds
+                    window.setTimeout(function () {
+                        getVehicleLocations(map);
+                    }, 60000);
+
+                }// if
+
+            });
+
+
+
+
+
+        }
+
+        function calcRoute(ctrl, startPoint, endPoint) {
+
+            if (startPoint && endPoint) {
+
+                //alert("calc");
+
+                // clear markers
+                clearMarkers();
+                directionsDisplay.setMap(null);
+                //directionsDisplay = null; 
+
+                directionsDisplay.setMap(map);
+
+                var selectedMode = "TRANSIT";
+                var request = {
+                    origin: startPoint,
+                    destination: endPoint,
+                    // Note that Javascript allows us to access the constant
+                    // using square brackets and a string value as its
+                    // "property."
+                    travelMode: google.maps.TravelMode[selectedMode]
+                };
+                directionsService.route(request, function (response, status) {
+                    if (status == google.maps.DirectionsStatus.OK) {
+                        directionsDisplay.setDirections(response);
+                    }
+                });
+
+
+                // plot bus locations
+                getVehicleLocations(map);
+
+            } else {
+                alert("Positions are not defined");
+            }// if-else
+
+
+
+        }
+
+        function clearMarkers() {
+
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].setMap(null);
+            }// for
+
+        }
+
+        // device APIs are available
+        //
+        function onDeviceReady() {
+
+            //alert("getting location");
+
+            if (navigator && navigator.geolocation) {
+
+                /*
+                // test current location
+                navigator.geolocation.getCurrentPosition(function (position) {
+
+                    //alert("getting start");
+                    alert(position.coords.latitude);
+                    alert(position.coords.longitude);
+                    start = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+                    //alert("setting start");
+                    */
+                    start = new google.maps.LatLng(27.9641826, -82.4384844);
+                    // plot current location
+                    var mapOptions = {
+                        zoom: 14,
+                        center: start
+                    }
+                    map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+
+                    directionsDisplay = new google.maps.DirectionsRenderer();
+                    directionsDisplay.setMap(map);
+
+                    var marker = new google.maps.Marker({
+                        position: start,
+                        map: map,
+                        title: 'Current Location'
+                    });
+
+                    markers.push(marker);
+                /*
+
+                    //alert('Latitude: ' + position.coords.latitude + '\n' +
+                    //  'Longitude: ' + position.coords.longitude + '\n' +
+                    //  'Altitude: ' + position.coords.altitude + '\n' +
+                    //  'Accuracy: ' + position.coords.accuracy + '\n' +
+                    //  'Altitude Accuracy: ' + position.coords.altitudeAccuracy + '\n' +
+                    //  'Heading: ' + position.coords.heading + '\n' +
+                    //  'Speed: ' + position.coords.speed + '\n' +
+                    //  'Timestamp: ' + position.timestamp + '\n');
+
+
+
+
+                    //calcRoute(null, start, end);
+
+                }, function (e) {
+                    alert("Ooops! Unable to get your current location. Please ensure your GPS is turned on. Reason: " + e.message);
+                });
+
+                //alert("location called");
+
+                */
+            }// if
+
+        }
+
+       
+
+        function goSearch() {
+
+
+            var ele = document.getElementById("end-address");
+
+            //alert(ele.value);
+
+            // get destination
+            getLocation(ele.value, function (dest) {
+
+                end = dest;
+                ele.value = "";
+
+                // do calc
+                calcRoute(null, start, end);
+
+            },
+            function () {
+
+            });
+        }
+
+
+
+        google.maps.event.addDomListener(window, 'load', init);
     </script>
   </head>
   <body>
+    <!--input type="text" id="tb" />
+    <input type="text" id="jsonTextBox" />-->
     <div id="map-canvas"></div>
+    <div id="search-box">
+	  <form name="map" action="" method="get">
+	    <div class="space">&nbsp;</div>
+	    <label>Where are you going?</label>
+	    <input type="text" id="end-address" name="end-address" value="">
+	    <input type="button" name="submit" value="Go" onClick="goSearch()">
+	  </form>
+    </div>
   </body>
 </html>
